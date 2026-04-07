@@ -1,0 +1,3 @@
+[submodule "fractality"]
+	path = fractality
+	url = https://github.com/altershaman/fractality.git
