@@ -3,6 +3,8 @@ import os
 import subprocess
 import sys
 
+from src.bb.common import read_global_config
+
 
 def _find_git_dir() -> str | None:
     result = subprocess.run(
@@ -39,16 +41,23 @@ def _read_bb_config(git_dir: str) -> dict:
     return {}
 
 
-def _write_bb_config(git_dir: str, title: str, description: str) -> None:
+def _resolve_embedding_model() -> str:
+    return read_global_config().get('embedding_model', 'nomic-embed-text')
+
+
+def _write_bb_config(git_dir: str, title: str, description: str, embedding_model: str) -> None:
     config_dir = os.path.dirname(_bb_config_path(git_dir))
     os.makedirs(config_dir, exist_ok=True)
     with open(_bb_config_path(git_dir), 'w') as f:
-        json.dump({'title': title, 'description': description}, f, indent=2)
+        json.dump(
+            {'title': title, 'description': description, 'embedding_model': embedding_model},
+            f, indent=2,
+        )
 
 
-def _create_bb(git_dir: str, title: str, description: str) -> None:
+def _create_bb(git_dir: str, title: str, description: str, embedding_model: str) -> None:
     os.makedirs(_bb_refs_dir(git_dir), exist_ok=True)
-    _write_bb_config(git_dir, title, description)
+    _write_bb_config(git_dir, title, description, embedding_model)
 
 
 def _print_bb_initialized(title: str, description: str) -> None:
@@ -80,6 +89,7 @@ def cmd_init() -> None:
 
     title = input('BB title (press Enter to skip): ').strip()
     description = input('BB description (press Enter to skip): ').strip()
+    embedding_model = _resolve_embedding_model()
 
-    _create_bb(git_dir, title, description)
+    _create_bb(git_dir, title, description, embedding_model)
     _print_bb_initialized(title, description)

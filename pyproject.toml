@@ -6,6 +6,10 @@ build-backend = "setuptools.build_meta"
 name = "ff-utility"
 version = "0.0.1"
 requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "sqlite-vec>=0.1",
+]
 
 [project.scripts]
 ff = "src.cli:main"
