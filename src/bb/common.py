@@ -53,27 +53,26 @@ def _aliases_path(git_dir: str) -> str:
     return os.path.join(git_dir, 'bb', 'aliases.json')
 
 
+def load_aliases(git_dir: str) -> dict[str, str]:
+    path = _aliases_path(git_dir)
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        return json.load(f)
+
+
 def save_aliases(git_dir: str, aliases: dict[str, str]) -> None:
     with open(_aliases_path(git_dir), 'w') as f:
         json.dump(aliases, f)
 
 
 def resolve_alias(git_dir: str, value: str) -> str | None:
-    path = _aliases_path(git_dir)
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        aliases = json.load(f)
-    return aliases.get(value)
+    return load_aliases(git_dir).get(value)
 
 
 def resolve_alias_key(git_dir: str, uuid: str) -> str | None:
     """Return the alias key for a given UUID, if one exists in current aliases."""
-    path = _aliases_path(git_dir)
-    if not os.path.exists(path):
-        return None
-    with open(path) as f:
-        aliases = json.load(f)
+    aliases = load_aliases(git_dir)
     return next((k for k, v in aliases.items() if v == uuid), None)
 
 

@@ -35,15 +35,27 @@ def _short_uuid(u: str) -> str:
     return u[:4]
 
 
-def _make_aliases(uuids: list[str]) -> dict[str, str]:
-    """Generate sequential aliases a, b, ..., z, aa, ab, ... for a list of UUIDs."""
-    aliases = {}
+def _alias_gen():
     letters = 'abcdefghijklmnopqrstuvwxyz'
-    for i, uuid in enumerate(uuids):
+    i = 0
+    while True:
         q, r = divmod(i, 26)
-        alias = (letters[q - 1] if q > 0 else '') + letters[r]
-        aliases[alias] = uuid
-    return aliases
+        yield (letters[q - 1] if q > 0 else '') + letters[r]
+        i += 1
+
+
+def _make_aliases(uuids: list[str], existing: dict[str, str]) -> dict[str, str]:
+    """Merge new UUIDs into existing alias map, assigning new keys for unknowns."""
+    uuid_to_alias = {v: k for k, v in existing.items()}
+    taken = set(existing.keys())
+    result = dict(existing)
+    new_uuids = [u for u in uuids if u not in uuid_to_alias]
+    gen = _alias_gen()
+    for uid in new_uuids:
+        alias = next(a for a in gen if a not in taken)
+        taken.add(alias)
+        result[alias] = uid
+    return result
 
 
 def _now() -> str:
@@ -74,7 +86,7 @@ def _output_concepts(
                 entry['excerpt'] = _excerpt(content, title)
             out.append(entry)
         print(json.dumps(out, indent=2))
-    elif args.md:
+    elif args.markdown:
         for r in results:
             content = contents.get(r['uuid'], '')
             fname = f"{r['uuid']}.md"
@@ -115,7 +127,8 @@ def cmd_suggest(git_dir: str, content: str, args) -> None:
             contents[r['uuid']] = c
         except SystemExit:
             contents[r['uuid']] = ''
-    aliases = _make_aliases([r['uuid'] for r in results])
+    existing = common.load_aliases(git_dir)
+    aliases = _make_aliases([r['uuid'] for r in results], existing)
     common.save_aliases(git_dir, aliases)
     _output_concepts(results, contents, aliases, args)
 
@@ -172,7 +185,7 @@ def cmd_resolve(git_dir: str, concept_uuid: str, args) -> None:
         else:
             entry['excerpt'] = _excerpt(content, title)
         print(json.dumps(entry))
-    elif args.md:
+    elif args.markdown:
         fname = f'{concept_uuid}.md'
         with open(fname, 'w') as f:
             f.write(content)
@@ -198,6 +211,17 @@ def _resolve_uuid(git_dir: str, value: str) -> str:
     return resolved
 
 
+def cmd_alias_reassign(git_dir: str, current: str, new: str) -> None:
+    aliases = common.load_aliases(git_dir)
+    if current not in aliases:
+        print(f'error: alias "{current}" not found', file=sys.stderr)
+        sys.exit(1)
+    uid = aliases.pop(current)
+    aliases[new] = uid
+    common.save_aliases(git_dir, aliases)
+    print(f'{current} → {new}  {uid}')
+
+
 def cmd_concept(args) -> None:
     git_dir = common.find_git_dir()
     common.require_bb(git_dir)
@@ -205,13 +229,18 @@ def cmd_concept(args) -> None:
     content = _resolve_content(args.concept)
 
     if args.alias:
-        resolved = common.resolve_alias(git_dir, args.alias)
+        if len(args.alias) == 2:
+            cmd_alias_reassign(git_dir, args.alias[0], args.alias[1])
+            return
+        resolved = common.resolve_alias(git_dir, args.alias[0])
         if resolved is None:
-            print(f'error: alias "{args.alias}" not found — run suggest first', file=sys.stderr)
+            print(f'error: alias "{args.alias[0]}" not found', file=sys.stderr)
             sys.exit(1)
         args.uuid = resolved
     elif args.uuid:
         args.uuid = _resolve_uuid(git_dir, args.uuid)
+
+    suggest_mode = getattr(args, '_suggest', False)
 
     if args.genesis:
         if not content:
@@ -222,8 +251,8 @@ def cmd_concept(args) -> None:
         cmd_new_version(git_dir, content, args.uuid, args)
     elif args.uuid and not content:
         cmd_resolve(git_dir, args.uuid, args)
-    elif content:
+    elif suggest_mode and content:
         cmd_suggest(git_dir, content, args)
     else:
-        print('error: content or --uuid required', file=sys.stderr)
+        print('error: prefix content with ? to suggest, add --genesis to record, or use --uuid/--alias to look up', file=sys.stderr)
         sys.exit(1)
