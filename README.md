@@ -69,6 +69,23 @@ ff "<string>" | <file.md> --genesis
 ```
 Records title and content as a brand new concept in BB, assigns a UUID.
 
+#### Merge
+
+```bash
+ff --uuid <survivor> --merge <uuid>|<alias>
+ff "<combined content>" --uuid <survivor> --merge <uuid>|<alias>
+```
+Absorbs a concept into the survivor. The retired concept's history is preserved — its versions remain accessible via `--uuid`. If content is provided, it becomes a new version of the survivor; otherwise the survivor's latest content is reused.
+
+ff will warn if judgments reference the retired concept — redirecting them is a separate act.
+
+#### Branch
+
+```bash
+ff "<string>" | <file.md> --genesis --branch <uuid>|<alias>[@<version>]
+```
+Creates a new concept with declared provenance. Without `@version`, branches from the latest version of the source. The source concept is unchanged — retiring it is a separate act.
+
 #### New version
 
 ```bash
@@ -101,8 +118,8 @@ By default `--uuid` and `--alias` return the latest version. Append `@` to addre
 
 ```bash
 ff --uuid <uuid>@3          # exact version 3
-ff --uuid <uuid>@2+         # versions 2 to latest, oldest first
-ff --uuid <uuid>@2-         # versions 2 to genesis, newest first
+ff --uuid <uuid>@2+         # versions 2 to latest, oldest first — follows branch descendants recursively
+ff --uuid <uuid>@2-         # versions 2 to genesis, newest first — follows provenance recursively
 ff --alias a@2              # same syntax works with aliases
 ```
 

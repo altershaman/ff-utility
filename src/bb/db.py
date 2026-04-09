@@ -24,14 +24,30 @@ def get_connection(git_dir: str) -> sqlite3.Connection:
 def _ensure_concepts_table(conn: sqlite3.Connection) -> None:
     conn.execute('''
         CREATE TABLE IF NOT EXISTS concepts (
-            uuid       TEXT PRIMARY KEY,
-            title      TEXT,
-            ref_sha    TEXT,
-            blob_sha   TEXT,
-            version    INTEGER,
-            updated_at TEXT
+            uuid                  TEXT PRIMARY KEY,
+            title                 TEXT,
+            ref_sha               TEXT,
+            blob_sha              TEXT,
+            version               INTEGER,
+            updated_at            TEXT,
+            source_uuid           TEXT,
+            source_version        INTEGER,
+            retired               INTEGER DEFAULT 0,
+            absorbed_into         TEXT,
+            absorbed_into_version INTEGER
         )
     ''')
+    # migrate existing DBs
+    cols = {row[1] for row in conn.execute('PRAGMA table_info(concepts)')}
+    for col, definition in [
+        ('source_uuid',           'TEXT'),
+        ('source_version',        'INTEGER'),
+        ('retired',               'INTEGER DEFAULT 0'),
+        ('absorbed_into',         'TEXT'),
+        ('absorbed_into_version', 'INTEGER'),
+    ]:
+        if col not in cols:
+            conn.execute(f'ALTER TABLE concepts ADD COLUMN {col} {definition}')
     conn.commit()
 
 
@@ -53,17 +69,44 @@ def upsert_concept(
     blob_sha: str,
     version: int,
     updated_at: str,
+    source_uuid: str | None = None,
+    source_version: int | None = None,
 ) -> None:
     conn.execute('''
-        INSERT INTO concepts (uuid, title, ref_sha, blob_sha, version, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO concepts (uuid, title, ref_sha, blob_sha, version, updated_at, source_uuid, source_version)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(uuid) DO UPDATE SET
             title = excluded.title,
             ref_sha = excluded.ref_sha,
             blob_sha = excluded.blob_sha,
             version = excluded.version,
-            updated_at = excluded.updated_at
-    ''', (uuid, title, ref_sha, blob_sha, version, updated_at))
+            updated_at = excluded.updated_at,
+            source_uuid = excluded.source_uuid,
+            source_version = excluded.source_version
+    ''', (uuid, title, ref_sha, blob_sha, version, updated_at, source_uuid, source_version))
+    conn.commit()
+
+
+def get_branches_from(conn: sqlite3.Connection, uuid: str) -> list[dict]:
+    """Return all concepts that directly branched from the given UUID."""
+    rows = conn.execute(
+        'SELECT uuid, source_version FROM concepts WHERE source_uuid = ? ORDER BY source_version',
+        (uuid,)
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def retire_concept(
+    conn: sqlite3.Connection,
+    uuid: str,
+    absorbed_into: str,
+    absorbed_into_version: int,
+) -> None:
+    conn.execute('''
+        UPDATE concepts
+        SET retired = 1, absorbed_into = ?, absorbed_into_version = ?
+        WHERE uuid = ?
+    ''', (absorbed_into, absorbed_into_version, uuid))
     conn.commit()
 
 

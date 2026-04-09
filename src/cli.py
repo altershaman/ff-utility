@@ -21,6 +21,10 @@ def main():
                         help='File path or string. Prefix with ? to suggest (e.g. ff ?"<query>")')
     parser.add_argument('--genesis', action='store_true',
                         help='Record content as a new concept')
+    parser.add_argument('--branch', metavar='uuid|alias',
+                        help='With --genesis: declare provenance (source concept)')
+    parser.add_argument('--merge', metavar='uuid|alias',
+                        help='Absorb a concept into the target --uuid concept')
     parser.add_argument('-id', '--uuid', metavar='uuid',
                         help='Target concept by full UUID or prefix')
     parser.add_argument('-a', '--alias', nargs='+', metavar='alias',
