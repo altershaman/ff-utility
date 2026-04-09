@@ -226,7 +226,7 @@ def cmd_concept(args) -> None:
     git_dir = common.find_git_dir()
     common.require_bb(git_dir)
 
-    content = _resolve_content(args.concept)
+    content = _resolve_content(args.content)
 
     if args.alias:
         if len(args.alias) == 2:
