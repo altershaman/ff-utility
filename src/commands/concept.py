@@ -180,34 +180,102 @@ def cmd_new_version(git_dir: str, content: str, concept_uuid: str, args) -> None
         print(f'version {version}  {_short_uuid(concept_uuid)}  # {title}')
 
 
-def cmd_resolve(git_dir: str, concept_uuid: str, args) -> None:
+def cmd_resolve(git_dir: str, concept_uuid: str, version: int | None, mode: str, args) -> None:
     if not git_ops.concept_exists(git_dir, concept_uuid):
         print(f'error: concept {concept_uuid} not found', file=sys.stderr)
         sys.exit(1)
-    content, blob_sha, version = git_ops.read_concept(git_dir, concept_uuid)
-    title = _extract_title(content)
-    alias = common.resolve_alias_key(git_dir, concept_uuid) or 'a'
-    if args.json:
-        entry = {'uuid': concept_uuid, 'alias': alias, 'title': title, 'version': version}
-        if args.full:
-            entry['content'] = content
-        else:
-            entry['excerpt'] = _excerpt(content, title)
-        print(json.dumps(entry))
-    elif args.markdown:
-        fname = f'{concept_uuid}.md'
-        with open(fname, 'w') as f:
-            f.write(content)
-        print(f'wrote {fname}')
+    alias = common.resolve_alias_key(git_dir, concept_uuid) or ''
+
+    if mode == 'latest':
+        content, blob_sha, ver = git_ops.read_concept(git_dir, concept_uuid)
+        _output_versions([(content, blob_sha, ver)], concept_uuid, alias, args)
+        return
+
+    all_versions = git_ops.read_all_versions(git_dir, concept_uuid)
+    version_map = {v: (c, b) for c, b, v in all_versions}
+
+    if mode == 'exact':
+        if version not in version_map:
+            print(f'error: version {version} not found for concept {concept_uuid}', file=sys.stderr)
+            sys.exit(1)
+        if version < 1:
+            print('error: versions start at 1', file=sys.stderr)
+            sys.exit(1)
+        c, b = version_map[version]
+        _output_versions([(c, b, version)], concept_uuid, alias, args)
+    elif mode == '+':
+        if version < 1:
+            print('error: versions start at 1', file=sys.stderr)
+            sys.exit(1)
+        subset = [(c, b, v) for c, b, v in all_versions if v >= version]
+        if not subset:
+            print(f'error: no versions >= {version} found', file=sys.stderr)
+            sys.exit(1)
+        _output_versions(subset, concept_uuid, alias, args)
+    elif mode == '-':
+        if version < 1:
+            print('error: versions start at 1', file=sys.stderr)
+            sys.exit(1)
+        subset = [(c, b, v) for c, b, v in all_versions if v <= version]
+        if not subset:
+            print(f'error: no versions <= {version} found', file=sys.stderr)
+            sys.exit(1)
+        subset.reverse()  # newest first
+        _output_versions(subset, concept_uuid, alias, args)
+
+
+def _parse_version_suffix(value: str) -> tuple[str, int | None, str]:
+    """Split alias/uuid from optional @version suffix.
+    Returns (base, version, mode) where mode is 'exact', '+', '-', or 'latest'.
+    """
+    if '@' not in value:
+        return value, None, 'latest'
+    base, suffix = value.rsplit('@', 1)
+    if suffix.endswith('+'):
+        n = int(suffix[:-1])
+        return base, n, '+'
+    elif suffix.endswith('-'):
+        n = int(suffix[:-1])
+        return base, n, '-'
     else:
-        if args.full:
-            print(f'{alias}  {concept_uuid}  # {title}')
-            print(content)
-        else:
-            print(f'{alias}  {concept_uuid}  # {title}')
-            excerpt = _excerpt(content, title)
-            if excerpt:
-                print(excerpt)
+        return base, int(suffix), 'exact'
+
+
+def _output_versions(
+    versions: list[tuple[str, str, int]],
+    uuid: str,
+    alias: str,
+    args,
+) -> None:
+    if args.json:
+        out = []
+        for content, _, version in versions:
+            title = _extract_title(content)
+            entry = {'uuid': uuid, 'alias': alias, 'title': title, 'version': version}
+            if args.full:
+                entry['content'] = content
+            else:
+                entry['excerpt'] = _excerpt(content, title)
+            out.append(entry)
+        print(json.dumps(out if len(out) > 1 else out[0], indent=2))
+    elif args.markdown:
+        for content, _, version in versions:
+            fname = f'{uuid}@{version}.md'
+            with open(fname, 'w') as f:
+                f.write(content)
+            print(f'wrote {fname}')
+    else:
+        for content, _, version in versions:
+            title = _extract_title(content)
+            if args.full:
+                print(f'v{version}  {alias}  {uuid}  # {title}')
+                print(content)
+                print()
+            else:
+                print(f'v{version}  {alias}  {uuid}  # {title}')
+                excerpt = _excerpt(content, title)
+                if excerpt:
+                    print(f'            {excerpt}')
 
 
 def _resolve_uuid(git_dir: str, value: str) -> str:
@@ -237,17 +305,22 @@ def cmd_concept(args) -> None:
 
     content = _resolve_content(args.content)
 
+    version_n = None
+    version_mode = 'latest'
+
     if args.alias:
         if len(args.alias) == 2:
             cmd_alias_reassign(git_dir, args.alias[0], args.alias[1])
             return
-        resolved = common.resolve_alias(git_dir, args.alias[0])
+        raw_alias, version_n, version_mode = _parse_version_suffix(args.alias[0])
+        resolved = common.resolve_alias(git_dir, raw_alias)
         if resolved is None:
-            print(f'error: alias "{args.alias[0]}" not found', file=sys.stderr)
+            print(f'error: alias "{raw_alias}" not found', file=sys.stderr)
             sys.exit(1)
         args.uuid = resolved
     elif args.uuid:
-        args.uuid = _resolve_uuid(git_dir, args.uuid)
+        raw_uuid, version_n, version_mode = _parse_version_suffix(args.uuid)
+        args.uuid = _resolve_uuid(git_dir, raw_uuid)
 
     suggest_mode = getattr(args, '_suggest', False)
 
@@ -259,7 +332,7 @@ def cmd_concept(args) -> None:
     elif args.uuid and content:
         cmd_new_version(git_dir, content, args.uuid, args)
     elif args.uuid and not content:
-        cmd_resolve(git_dir, args.uuid, args)
+        cmd_resolve(git_dir, args.uuid, version_n, version_mode, args)
     elif suggest_mode and content:
         cmd_suggest(git_dir, content, args)
     else:

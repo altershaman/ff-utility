@@ -89,17 +89,41 @@ def write_new_version_commit(git_dir: str, uuid: str, content: str) -> tuple[str
     return commit_sha, blob_sha, version
 
 
+def _parse_version_from_msg(msg: str) -> int:
+    for line in msg.splitlines():
+        if line.startswith('version:'):
+            try:
+                return int(line.split(':', 1)[1].strip())
+            except ValueError:
+                pass
+    return 1
+
+
 def read_concept(git_dir: str, uuid: str) -> tuple[str, str, int]:
-    """Returns (content, blob_sha, version)."""
+    """Returns (content, blob_sha, version) for the latest version."""
     commit_sha = _run(['git', 'rev-parse', f'refs/bb/concepts/{uuid}'], git_dir)
     blob_sha = _run(['git', 'rev-parse', f'{commit_sha}:{uuid}'], git_dir)
     content = _run(['git', 'cat-file', 'blob', blob_sha], git_dir)
     msg = _run(['git', 'log', '-1', '--format=%B', commit_sha], git_dir)
-    version = 1
-    for line in msg.splitlines():
-        if line.startswith('version:'):
-            try:
-                version = int(line.split(':', 1)[1].strip())
-            except ValueError:
-                pass
-    return content, blob_sha, version
+    return content, blob_sha, _parse_version_from_msg(msg)
+
+
+def read_all_versions(git_dir: str, uuid: str) -> list[tuple[str, str, int]]:
+    """Walk commit chain tip→genesis, return list of (content, blob_sha, version) oldest first."""
+    commit_sha = _run(['git', 'rev-parse', f'refs/bb/concepts/{uuid}'], git_dir)
+    versions = []
+    current = commit_sha
+    while current:
+        msg = _run(['git', 'log', '-1', '--format=%B', current], git_dir)
+        blob_sha = _run(['git', 'rev-parse', f'{current}:{uuid}'], git_dir)
+        content = _run(['git', 'cat-file', 'blob', blob_sha], git_dir)
+        versions.append((content, blob_sha, _parse_version_from_msg(msg)))
+        parent = subprocess.run(
+            ['git', 'rev-parse', f'{current}^'],
+            capture_output=True, text=True, cwd=git_dir,
+        )
+        if parent.returncode != 0:
+            break
+        current = parent.stdout.strip()
+    versions.reverse()  # oldest first
+    return versions

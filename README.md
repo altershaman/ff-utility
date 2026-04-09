@@ -95,4 +95,15 @@ To rename an alias:
 ff --alias <current> <new>
 ```
 
+**Version addressing**
+
+By default `--uuid` and `--alias` return the latest version. Append `@` to address a specific version or range:
+
+```bash
+ff --uuid <uuid>@3          # exact version 3
+ff --uuid <uuid>@2+         # versions 2 to latest, oldest first
+ff --uuid <uuid>@2-         # versions 2 to genesis, newest first
+ff --alias a@2              # same syntax works with aliases
+```
+
 
