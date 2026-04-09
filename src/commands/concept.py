@@ -24,6 +24,13 @@ def _extract_title(content: str) -> str:
     return ''
 
 
+def _validate_title(title: str) -> None:
+    for ch in ('.', ':'):
+        if ch in title:
+            print(f'error: concept title "{title}" contains reserved character "{ch}" — dots and colons are not allowed in concept names', file=sys.stderr)
+            sys.exit(1)
+
+
 def _excerpt(content: str, title: str, max_chars: int = 200) -> str:
     lines = content.splitlines()
     body_lines = [l for l in lines if not l.strip().startswith('#')]
@@ -138,6 +145,7 @@ def cmd_genesis(git_dir: str, content: str, args) -> None:
     ollama_client.check_ollama(model)
     new_uuid = str(uuid_lib.uuid4())
     title = _extract_title(content)
+    _validate_title(title)
     commit_sha, blob_sha = git_ops.write_genesis_commit(git_dir, new_uuid, content)
     conn = db.get_connection(git_dir)
     embedding = ollama_client.get_embedding(model, content)
@@ -157,6 +165,7 @@ def cmd_new_version(git_dir: str, content: str, concept_uuid: str, args) -> None
     model = common.resolve_embedding_model(git_dir)
     ollama_client.check_ollama(model)
     title = _extract_title(content)
+    _validate_title(title)
     commit_sha, blob_sha, version = git_ops.write_new_version_commit(
         git_dir, concept_uuid, content
     )
